@@ -33,74 +33,34 @@
     <div class="container">
         <div class="avatar" id="avatar">A</div>
         <div class="name">Анна</div>
-        <div class="status" id="status">Loading SDK...</div>
+        <div class="status" id="status">Loading...</div>
     </div>
 
-    <!-- Load ElevenLabs SDK via script tag (more compatible than ESM import) -->
-    <script src="https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.2.2/dist/index.umd.min.js"></script>
-    <script>
+    <script type="module">
+        import { Conversation } from 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.2.2/+esm';
+
         const avatar = document.getElementById('avatar');
         const status = document.getElementById('status');
         const AGENT_ID = 'agent_9001kmn7nwcbfjbr2fj0fw567048';
 
         async function start() {
             try {
-                status.textContent = 'Requesting mic...';
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                status.textContent = 'Connecting...';
 
-                // Get microphone - Recall.ai Output Media provides meeting audio here
-                let stream;
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    status.textContent = 'Mic OK, connecting...';
-                } catch (micErr) {
-                    status.textContent = 'Mic error: ' + micErr.message;
-                    // Try without explicit mic request - Recall might auto-provide it
-                }
-
-                // Check if SDK loaded
-                if (typeof ElevenLabsClient === 'undefined' && typeof Conversation === 'undefined') {
-                    // Try alternative global names
-                    const globals = Object.keys(window).filter(k => k.toLowerCase().includes('eleven') || k.toLowerCase().includes('conversation'));
-                    status.textContent = 'SDK globals: ' + (globals.length ? globals.join(',') : 'none found');
-
-                    // Fallback: try ESM import
-                    try {
-                        const mod = await import('https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.2.2/+esm');
-                        window._Conversation = mod.Conversation;
-                        status.textContent = 'ESM loaded, connecting...';
-                    } catch (esmErr) {
-                        status.textContent = 'SDK load failed: ' + esmErr.message;
-                        return;
-                    }
-                }
-
-                // Get the Conversation class
-                const ConvClass = window.Conversation || window._Conversation ||
-                    (window.ElevenLabsClient && window.ElevenLabsClient.Conversation);
-
-                if (!ConvClass) {
-                    status.textContent = 'Conversation class not found';
-                    return;
-                }
-
-                status.textContent = 'Starting session...';
-
-                const conversation = await ConvClass.startSession({
+                const conversation = await Conversation.startSession({
                     agentId: AGENT_ID,
                     connectionType: 'websocket',
                     overrides: {
                         agent: { language: 'uk' },
+                        tts: {
+                            voiceId: 'l0FRhtyn0AKRYadUAdgv',
+                            optimizeStreamingLatency: 4,
+                        },
                     },
-                    onConnect: () => {
-                        status.textContent = 'Listening...';
-                    },
-                    onDisconnect: () => {
-                        status.textContent = 'Disconnected';
-                        avatar.classList.remove('speaking');
-                    },
-                    onError: (err) => {
-                        status.textContent = 'Error: ' + (err.message || JSON.stringify(err));
-                    },
+                    onConnect: () => { status.textContent = 'Listening...'; },
+                    onDisconnect: () => { status.textContent = 'Disconnected'; avatar.classList.remove('speaking'); },
+                    onError: (err) => { status.textContent = 'Error: ' + (err.message || err); },
                     onModeChange: (mode) => {
                         if (mode.mode === 'speaking') {
                             avatar.classList.add('speaking');
@@ -110,20 +70,14 @@
                             status.textContent = 'Listening...';
                         }
                     },
-                    onMessage: (msg) => {},
+                    onMessage: () => {},
                 });
-
             } catch (err) {
-                status.textContent = 'Fatal: ' + err.message;
+                status.textContent = 'Error: ' + err.message;
             }
         }
 
-        // Start when page loads
-        if (document.readyState === 'complete') {
-            start();
-        } else {
-            window.addEventListener('load', start);
-        }
+        start();
     </script>
 </body>
 </html>
