@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анна — Meeting Agent</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1a1a2e;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            text-align: center;
+        }
+        .avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            transition: box-shadow 0.3s;
+        }
+        .avatar.speaking {
+            box-shadow: 0 0 30px rgba(102, 126, 234, 0.8), 0 0 60px rgba(118, 75, 162, 0.4);
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .name { font-size: 24px; font-weight: bold; }
+        .status { font-size: 14px; color: #aaa; margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="avatar" id="avatar">A</div>
+        <div class="name">Анна</div>
+        <div class="status" id="status">Connecting...</div>
+    </div>
+
+    <script type="module">
+        // ElevenLabs Conversational AI client
+        // Using ESM import from CDN
+        import { Conversation } from 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.2.2/+esm';
+
+        const avatar = document.getElementById('avatar');
+        const status = document.getElementById('status');
+
+        // Get signed URL from our server, or use agent_id from query params
+        const params = new URLSearchParams(window.location.search);
+        const agentIdParam = params.get('agent_id');
+
+        async function getSignedUrl() {
+            try {
+                const baseUrl = window.location.origin;
+                const resp = await fetch(baseUrl + '/api/signed-url');
+                const data = await resp.json();
+                return data.signed_url;
+            } catch (e) {
+                console.error('Failed to get signed URL:', e);
+                return null;
+            }
+        }
+
+        async function start() {
+            try {
+                // Request microphone (will get meeting audio via Recall.ai Output Media)
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                status.textContent = 'Getting credentials...';
+
+                // Get signed URL from server
+                const signedUrl = await getSignedUrl();
+
+                const sessionConfig = {
+                    connectionType: 'websocket',
+                    overrides: {
+                        agent: {
+                            language: 'uk',
+                        },
+                    },
+                    onConnect: () => {
+                        status.textContent = 'Listening...';
+                        console.log('Connected to ElevenLabs');
+                    },
+                    onDisconnect: () => {
+                        status.textContent = 'Disconnected';
+                        avatar.classList.remove('speaking');
+                    },
+                    onError: (error) => {
+                        console.error('ElevenLabs error:', error);
+                        status.textContent = 'Error: ' + (error.message || error);
+                    },
+                    onModeChange: (mode) => {
+                        if (mode.mode === 'speaking') {
+                            avatar.classList.add('speaking');
+                            status.textContent = 'Speaking...';
+                        } else {
+                            avatar.classList.remove('speaking');
+                            status.textContent = 'Listening...';
+                        }
+                    },
+                    onMessage: (message) => {
+                        console.log('Message:', message);
+                    },
+                };
+
+                // Try signed URL first, fall back to agent_id (public agent)
+                const signedUrl = await getSignedUrl();
+                if (signedUrl) {
+                    sessionConfig.signedUrl = signedUrl;
+                } else if (agentIdParam) {
+                    sessionConfig.agentId = agentIdParam;
+                } else {
+                    // Use default agent ID
+                    sessionConfig.agentId = 'agent_9001kmn7nwcbfjbr2fj0fw567048';
+                }
+
+                const conversation = await Conversation.startSession(sessionConfig);
+                console.log('Session started, ID:', conversation.getId());
+
+            } catch (error) {
+                console.error('Failed to start:', error);
+                status.textContent = 'Failed: ' + error.message;
+            }
+        }
+
+        // Auto-start when page loads
+        start();
+    </script>
+</body>
+</html>
