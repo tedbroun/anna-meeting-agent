@@ -3,43 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Анна — Meeting Agent</title>
+    <title>Анна</title>
     <style>
         body {
-            margin: 0;
-            padding: 0;
-            background: #1a1a2e;
-            color: white;
+            margin: 0; padding: 0;
+            background: #1a1a2e; color: white;
             font-family: Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            height: 100vh; overflow: hidden;
         }
-        .container {
-            text-align: center;
-        }
+        .container { text-align: center; }
         .avatar {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
+            width: 120px; height: 120px; border-radius: 50%;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             margin: 0 auto 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 48px;
-            transition: box-shadow 0.3s;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 48px; transition: box-shadow 0.3s;
         }
         .avatar.speaking {
-            box-shadow: 0 0 30px rgba(102, 126, 234, 0.8), 0 0 60px rgba(118, 75, 162, 0.4);
+            box-shadow: 0 0 30px rgba(102,126,234,0.8), 0 0 60px rgba(118,75,162,0.4);
             animation: pulse 1s infinite;
         }
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
+        @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
         .name { font-size: 24px; font-weight: bold; }
         .status { font-size: 14px; color: #aaa; margin-top: 8px; }
     </style>
@@ -48,61 +33,73 @@
     <div class="container">
         <div class="avatar" id="avatar">A</div>
         <div class="name">Анна</div>
-        <div class="status" id="status">Connecting...</div>
+        <div class="status" id="status">Loading SDK...</div>
     </div>
 
-    <script type="module">
-        // ElevenLabs Conversational AI client
-        // Using ESM import from CDN
-        import { Conversation } from 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.2.2/+esm';
-
+    <!-- Load ElevenLabs SDK via script tag (more compatible than ESM import) -->
+    <script src="https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.2.2/dist/index.umd.min.js"></script>
+    <script>
         const avatar = document.getElementById('avatar');
         const status = document.getElementById('status');
-
-        // Get signed URL from our server, or use agent_id from query params
-        const params = new URLSearchParams(window.location.search);
-        const agentIdParam = params.get('agent_id');
-
-        async function getSignedUrl() {
-            try {
-                const baseUrl = window.location.origin;
-                const resp = await fetch(baseUrl + '/api/signed-url');
-                const data = await resp.json();
-                return data.signed_url;
-            } catch (e) {
-                console.error('Failed to get signed URL:', e);
-                return null;
-            }
-        }
+        const AGENT_ID = 'agent_9001kmn7nwcbfjbr2fj0fw567048';
 
         async function start() {
             try {
-                // Request microphone (will get meeting audio via Recall.ai Output Media)
-                await navigator.mediaDevices.getUserMedia({ audio: true });
+                status.textContent = 'Requesting mic...';
 
-                status.textContent = 'Getting credentials...';
+                // Get microphone - Recall.ai Output Media provides meeting audio here
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    status.textContent = 'Mic OK, connecting...';
+                } catch (micErr) {
+                    status.textContent = 'Mic error: ' + micErr.message;
+                    // Try without explicit mic request - Recall might auto-provide it
+                }
 
-                // Get signed URL from server
-                const signedUrl = await getSignedUrl();
+                // Check if SDK loaded
+                if (typeof ElevenLabsClient === 'undefined' && typeof Conversation === 'undefined') {
+                    // Try alternative global names
+                    const globals = Object.keys(window).filter(k => k.toLowerCase().includes('eleven') || k.toLowerCase().includes('conversation'));
+                    status.textContent = 'SDK globals: ' + (globals.length ? globals.join(',') : 'none found');
 
-                const sessionConfig = {
+                    // Fallback: try ESM import
+                    try {
+                        const mod = await import('https://cdn.jsdelivr.net/npm/@elevenlabs/client@0.2.2/+esm');
+                        window._Conversation = mod.Conversation;
+                        status.textContent = 'ESM loaded, connecting...';
+                    } catch (esmErr) {
+                        status.textContent = 'SDK load failed: ' + esmErr.message;
+                        return;
+                    }
+                }
+
+                // Get the Conversation class
+                const ConvClass = window.Conversation || window._Conversation ||
+                    (window.ElevenLabsClient && window.ElevenLabsClient.Conversation);
+
+                if (!ConvClass) {
+                    status.textContent = 'Conversation class not found';
+                    return;
+                }
+
+                status.textContent = 'Starting session...';
+
+                const conversation = await ConvClass.startSession({
+                    agentId: AGENT_ID,
                     connectionType: 'websocket',
                     overrides: {
-                        agent: {
-                            language: 'uk',
-                        },
+                        agent: { language: 'uk' },
                     },
                     onConnect: () => {
                         status.textContent = 'Listening...';
-                        console.log('Connected to ElevenLabs');
                     },
                     onDisconnect: () => {
                         status.textContent = 'Disconnected';
                         avatar.classList.remove('speaking');
                     },
-                    onError: (error) => {
-                        console.error('ElevenLabs error:', error);
-                        status.textContent = 'Error: ' + (error.message || error);
+                    onError: (err) => {
+                        status.textContent = 'Error: ' + (err.message || JSON.stringify(err));
                     },
                     onModeChange: (mode) => {
                         if (mode.mode === 'speaking') {
@@ -113,33 +110,20 @@
                             status.textContent = 'Listening...';
                         }
                     },
-                    onMessage: (message) => {
-                        console.log('Message:', message);
-                    },
-                };
+                    onMessage: (msg) => {},
+                });
 
-                // Try signed URL first, fall back to agent_id (public agent)
-                const signedUrl = await getSignedUrl();
-                if (signedUrl) {
-                    sessionConfig.signedUrl = signedUrl;
-                } else if (agentIdParam) {
-                    sessionConfig.agentId = agentIdParam;
-                } else {
-                    // Use default agent ID
-                    sessionConfig.agentId = 'agent_9001kmn7nwcbfjbr2fj0fw567048';
-                }
-
-                const conversation = await Conversation.startSession(sessionConfig);
-                console.log('Session started, ID:', conversation.getId());
-
-            } catch (error) {
-                console.error('Failed to start:', error);
-                status.textContent = 'Failed: ' + error.message;
+            } catch (err) {
+                status.textContent = 'Fatal: ' + err.message;
             }
         }
 
-        // Auto-start when page loads
-        start();
+        // Start when page loads
+        if (document.readyState === 'complete') {
+            start();
+        } else {
+            window.addEventListener('load', start);
+        }
     </script>
 </body>
 </html>
